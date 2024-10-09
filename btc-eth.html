@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Price Tracker</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(150deg, #000000, #02314d, #020a36, #030331, #0c0125, #2f0341, #000000);
+            background-size: 600% 600%;
+            animation: gradient-animation 30s ease infinite;
+            color: #cfdadb;
+        }
+
+        @keyframes gradient-animation {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+        h1 {
+            font-size: clamp(1.5rem, 2.5vw, 5rem);
+            margin: 10px;
+        }
+        .container {
+            text-align: center;
+            width: 100%;
+        }
+        .price-container {
+            text-align: center;
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            padding: 10px;
+            margin: 10px;
+        }
+        .price-item {
+            flex: 1;
+            margin: 60px;
+            max-width: 40%;
+        }
+        .price-item h2 {
+            font-size: clamp(1.4rem, 4vw, 4.5rem);
+            margin: 5px;
+        }
+        .price-item .price {
+            font-size: clamp(1.6rem, 15vw, 20rem);
+        }
+        .green {
+            animation: flash-green 500ms 15;
+            font-weight: bold;
+            font-size: 110%;
+        }
+        .red {
+            animation: flash-red 500ms 15;
+            font-weight: bold;
+            font-size: 110%;
+        }
+        @keyframes flash-green {
+            0%, 90%, 100% { color: green; }
+            50% { color: inherit; }
+        }
+        @keyframes flash-red {
+            0%, 90%, 100% { color: red; }
+            50% { color: inherit; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Crypto Price Tracker</h1>
+        <div class="price-container">
+            <div class="price-item">
+                <h2>Bitcoin</h2>
+                <span id="btc-price" class="price"></span>
+            </div>
+            <div class="price-item">
+                <h2>Ethereum</h2>
+                <span id="eth-price" class="price"></span>
+            </div>
+        </div>
+    </div>
+    <script>
+        const btcPriceElement = document.getElementById('btc-price');
+        const ethPriceElement = document.getElementById('eth-price');
+        let btcPrices = [];
+        let ethPrices = [];
+
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playTone(frequency, duration) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime); // Start with gain at 0 to prevent clicks
+            gainNode.gain.linearRampToValueAtTime(1, audioContext.currentTime + 0.05); // Ramp up gain to prevent clicks
+
+            oscillator.start();
+            setTimeout(() => {
+            gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.05); // Ramp down gain to prevent clicks
+            setTimeout(() => {
+                oscillator.stop();
+            }, 10); // Stop oscillator after gain has ramped down
+            }, duration);
+        }
+
+        function playRisingTone(change) {
+            const tones = Math.min(Math.round(change * 1000), 30);
+            let frequency = 400 - (tones * 10); // Start from a low frequency
+            const duration = 150 - (tones * 3); // Consistent duration for each tone
+            const pause = 20; // Short pause between tones
+            playTone(frequency, duration);
+            for (let i = 1; i < tones; i++) {
+                frequency = Math.min(frequency * 1.2, 2500); // increase frequency for each tone, max 3000
+                (function(f, d, delay) {
+                    setTimeout(() => playTone(f, d), delay);
+                })(frequency, duration, i * (duration + pause));
+            }
+        }
+
+        function playFallingTone(change) {
+            const tones = Math.min(Math.round(change * 1000), 30);
+            let frequency = tones * 150 + 300; // Start from a high frequency
+            const duration = 150 - (tones * 3); // Consistent duration for each tone
+            const pause = 20; // Short pause between tones
+            playTone(frequency, duration);
+            for (let i = 1; i < tones; i++) {
+                frequency = Math.max(frequency * 0.8, 100);
+                (function(f, d, delay) {
+                    setTimeout(() => playTone(f, d), delay);
+                })(frequency, duration, i * (duration + pause));
+            }
+        }
+
+        async function fetchPrices() {
+            const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true');
+            const data = await response.json();
+            return { btc: data.bitcoin.usd, btc_24h_change: data.bitcoin.usd_24h_change, eth: data.ethereum.usd, eth_24h_change: data.ethereum.usd_24h_change };
+        }
+
+        function updatePrices(prices) {
+            updatePrice(btcPriceElement, btcPrices, prices.btc);
+            updatePrice(ethPriceElement, ethPrices, prices.eth);
+        }
+
+        function updatePrice(element, pricesArray, newPrice) {
+            const previousPrice = pricesArray[pricesArray.length - 1];
+            const minAgoPrice = pricesArray[pricesArray.length - 2];
+
+            setDisplayPrice(element, newPrice);
+            element.classList.add('green');
+
+            if (previousPrice !== undefined) {
+                if (newPrice > previousPrice) {
+                    element.classList.add('green');
+                    element.classList.remove('red');
+                } else if (newPrice < previousPrice) {
+                    element.classList.add('red');
+                    element.classList.remove('green');
+                } else {
+                    element.classList.remove('green');
+                    element.classList.remove('red');
+                }
+
+                const priceChange = minAgoPrice !== undefined ? newPrice / minAgoPrice : 1;
+
+                // Play sound if price has changed by more than 0.1% in last minute
+                if (priceChange !== 1) {    
+                    const simpleChange = Math.abs(priceChange - 1);
+                    console.log(element.id.includes('btc') ? 'BTC' : 'ETH', ((priceChange - 1) * 100).toFixed(2) + '%');
+                    if (priceChange > 1.0015) {
+                        playRisingTone(simpleChange);
+                    } else if (priceChange < 0.9985) {
+                        playFallingTone(simpleChange);
+                    }
+                }
+
+                pricesArray.push(newPrice);
+                if (pricesArray.length > 60) {
+                    pricesArray.shift();
+                }
+            }
+
+            pricesArray.push(newPrice);
+            if (pricesArray.length > 60) {
+                pricesArray.shift();
+            }
+        }
+
+        function setDisplayPrice(element, price) {
+            const formattedPrice = Math.round(price).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+            element.textContent = formattedPrice;
+        }
+
+        async function pollPrices() {
+            const prices = await fetchPrices();
+            updatePrices(prices);
+        }
+
+        setInterval(pollPrices, 30000);
+        pollPrices();
+    </script>
+</body>
+</html>
